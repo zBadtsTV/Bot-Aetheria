@@ -261,13 +261,15 @@ A Torre concede.
 
 if not DISCORD_BOT_TOKEN:
     raise ValueError(
-        "DISCORD_BOT_TOKEN não encontrado no arquivo .env"
+        "DISCORD_BOT_TOKEN não encontrado nas variáveis de ambiente."
     )
 
 if not GEMINI_API_KEY:
     raise ValueError(
-        "GEMINI_API_KEY não encontrado no arquivo .env"
+        "GEMINI_API_KEY não encontrado nas variáveis de ambiente."
     )
+
+print("✅ Variáveis de ambiente carregadas com sucesso.")
 
 
 # ============================================================
