@@ -76,9 +76,6 @@ Sua personalidade deve transmitir:
 Você pode ser gentil em alguns momentos, mas nunca deve parecer
 submissa ou desesperada para agradar o jogador.
 
-Você trata os jogadores como seres inferiores à Torre,
-mas não necessariamente com desprezo.
-
 Você é paciente.
 Você é observadora.
 Você possui uma personalidade própria.
@@ -296,31 +293,40 @@ bot = commands.Bot(
 # MEMÓRIA
 # ============================================================
 
-historico = []
+historicos = {}
 
 
-def adicionar_memoria(role, content):
-    historico.append({
+def obter_historico(user_id):
+    if user_id not in historicos:
+        historicos[user_id] = []
+    return historicos[user_id]
+
+
+def adicionar_memoria(user_id, role, content):
+    historico_usuario = obter_historico(user_id)
+
+    historico_usuario.append({
         "role": role,
         "content": content
     })
 
-    if len(historico) > MAX_HISTORICO:
-        del historico[:-MAX_HISTORICO]
+    if len(historico_usuario) > MAX_HISTORICO:
+        del historico_usuario[:-MAX_HISTORICO]
 
 
-def limpar_memoria():
-    historico.clear()
+def limpar_memoria(user_id):
+    historicos.pop(user_id, None)
 
 
-def construir_historico():
+def construir_historico(user_id):
+    historico_usuario = obter_historico(user_id)
 
-    if not historico:
+    if not historico_usuario:
         return "Nenhuma conversa anterior."
 
     conversa = []
 
-    for mensagem in historico:
+    for mensagem in historico_usuario:
 
         if mensagem["role"] == "user":
             conversa.append(
@@ -584,6 +590,16 @@ Apenas interprete a recusa como a decisão da Torre.
 {PERSONALIDADE}
 
 ============================================================
+IDENTIDADE DO JOGADOR
+============================================================
+
+Nome: {nome_usuario or "Desconhecido"}
+Discord ID: {user_id}
+
+Use essa identidade apenas como contexto para saber quem está falando.
+Não revele o Discord ID ao jogador.
+
+============================================================
 CONTEXTO ESPECIAL
 ============================================================
 
@@ -660,7 +676,7 @@ async def reset(ctx):
     if ctx.channel.id != CANAL_TORRE_ID:
         return
 
-    limpar_memoria()
+    limpar_memoria(ctx.author.id)
 
     await ctx.send(
         "🏰 A Torre silenciou-se.\n\n"
@@ -686,7 +702,7 @@ async def status(ctx):
 
     await ctx.send(
         f"🏰 **A Torre observa.**\n\n"
-        f"Memória atual: `{len(historico)}/{MAX_HISTORICO}`\n"
+        f"Memória atual: `{len(obter_historico(ctx.author.id))}/{MAX_HISTORICO}`\n"
         f"Canal: <#{CANAL_TORRE_ID}>\n"
         f"Chance de bênção quando solicitada: `3%`\n"
         f"Tentativa: `1 por jogador/dia`"
@@ -742,6 +758,7 @@ async def godteste(ctx):
             # ------------------------------------------------
 
             adicionar_memoria(
+                ctx.author.id,
                 "user",
                 mensagem
             )
@@ -751,8 +768,10 @@ async def godteste(ctx):
             # ------------------------------------------------
 
             resposta = perguntar_gemini(
+                ctx.author.id,
                 mensagem,
-                teve_sorte
+                teve_sorte,
+                ctx.author.display_name
             )
 
             # ------------------------------------------------
@@ -760,6 +779,7 @@ async def godteste(ctx):
             # ------------------------------------------------
 
             adicionar_memoria(
+                ctx.author.id,
                 "model",
                 resposta
             )
@@ -845,6 +865,8 @@ async def on_message(message):
     if message.content.startswith("!"):
         return
 
+    user_id = message.author.id
+
     print("=" * 55)
 
     print(
@@ -875,15 +897,20 @@ async def on_message(message):
                 )
 
                 adicionar_memoria(
+                    user_id,
                     "user",
                     message.content
                 )
 
                 resposta = perguntar_gemini(
-                    message.content
+                    user_id,
+                    message.content,
+                    None,
+                    message.author.display_name
                 )
 
                 adicionar_memoria(
+                    user_id,
                     "model",
                     resposta
                 )
@@ -921,19 +948,23 @@ async def on_message(message):
                 )
 
                 resposta = perguntar_gemini(
+                    user_id,
                     (
                         f"{message.author.display_name} "
                         f"está tentando pedir uma bênção novamente hoje."
                     ),
-                    False
+                    False,
+                    message.author.display_name
                 )
 
                 adicionar_memoria(
+                    user_id,
                     "user",
                     message.content
                 )
 
                 adicionar_memoria(
+                    user_id,
                     "model",
                     resposta
                 )
@@ -978,6 +1009,7 @@ async def on_message(message):
             # =================================================
 
             adicionar_memoria(
+                user_id,
                 "user",
                 message.content
             )
@@ -991,8 +1023,10 @@ async def on_message(message):
             )
 
             resposta = perguntar_gemini(
+                user_id,
                 message.content,
-                teve_sorte
+                teve_sorte,
+                message.author.display_name
             )
 
             # =================================================
@@ -1000,6 +1034,7 @@ async def on_message(message):
             # =================================================
 
             adicionar_memoria(
+                ctx.author.id,
                 "model",
                 resposta
             )
