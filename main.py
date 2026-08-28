@@ -516,7 +516,7 @@ def eh_pedido_de_bencao(mensagem):
 # GEMINI
 # ============================================================
 
-def perguntar_gemini(user_id, mensagem, resultado_sorte=None):
+def perguntar_gemini(user_id, mensagem, resultado_sorte=None, nome_usuario=None):
 
     historico_texto = construir_historico(user_id)
 
@@ -874,6 +874,8 @@ async def on_message(message):
         f"{message.content}"
     )
 
+    historico_usuario = obter_historico(user_id)
+
     try:
 
         async with message.channel.typing():
@@ -1022,11 +1024,11 @@ async def on_message(message):
                 "🏰 A Torre está julgando..."
             )
 
-           resposta = perguntar_gemini(
+            resposta = perguntar_gemini(
                 user_id,
                 message.content,
                 teve_sorte
-        )
+            )
 
 
             # =================================================
@@ -1034,7 +1036,7 @@ async def on_message(message):
             # =================================================
 
             adicionar_memoria(
-                ctx.author.id,
+                user_id,
                 "model",
                 resposta
             )
