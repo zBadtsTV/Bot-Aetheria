@@ -516,9 +516,9 @@ def eh_pedido_de_bencao(mensagem):
 # GEMINI
 # ============================================================
 
-def perguntar_gemini(mensagem, resultado_sorte=None):
+def perguntar_gemini(user_id, mensagem, resultado_sorte=None):
 
-    historico_texto = construir_historico()
+    historico_texto = construir_historico(user_id)
 
     # --------------------------------------------------------
     # CONVERSA NORMAL
@@ -1022,12 +1022,12 @@ async def on_message(message):
                 "🏰 A Torre está julgando..."
             )
 
-            resposta = perguntar_gemini(
+           resposta = perguntar_gemini(
                 user_id,
                 message.content,
-                teve_sorte,
-                message.author.display_name
-            )
+                teve_sorte
+        )
+
 
             # =================================================
             # SALVAR RESPOSTA
@@ -1065,12 +1065,11 @@ async def on_message(message):
 
         # Remove a mensagem caso o Gemini falhe
         if (
-            historico
-            and historico[-1]["role"] == "user"
-            and historico[-1]["content"] == message.content
+            historico_usuario
+            and historico_usuario[-1]["role"] == "user"
+            and historico_usuario[-1]["content"] == message.content
         ):
-
-            historico.pop()
+             historico_usuario.pop()
 
         await message.reply(
             "A Torre permaneceu em silêncio por um instante.\n"
