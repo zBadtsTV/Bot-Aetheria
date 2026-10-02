@@ -2,6 +2,7 @@ import os
 import random
 import re
 from datetime import date
+import json
 
 import discord
 from discord.ext import commands
@@ -32,8 +33,26 @@ CANAL_TORRE_ID = 1527487084447924234
 
 MAX_HISTORICO = 20
 
-# Chance de receber uma bênção quando PEDIR
+# Chance normal de receber uma bênção quando PEDIR
 CHANCE_BENCAO = 0.03
+
+# ============================================================
+# SISTEMA ESPECIAL DE GENTILEZA — KALEB
+# ============================================================
+# Kaleb começa em 3% e pode subir 1 ponto percentual por
+# demonstração de gentileza, chegando no máximo a 7%.
+# Depois de receber uma bênção, o ciclo volta para 3%.
+
+# Para identificação exata, coloque aqui o ID do Kaleb.
+# Se ficar None, o bot também reconhece o display name "Kaleb".
+KALEB_USER_ID = None
+KALEB_NOMES = {"kaleb"}
+
+# 0 = 3%, 1 = 4%, 2 = 5%, 3 = 6%, 4 = 7%
+KALEB_MAX_NIVEL = 4
+
+# Mantém o progresso mesmo se o bot reiniciar.
+ARQUIVO_GENTILEZA = "gentileza_torre.json"
 
 
 # ============================================================
@@ -295,6 +314,103 @@ bot = commands.Bot(
 
 historicos = {}
 
+# Guarda o nível de gentileza acumulado do Kaleb.
+nivel_gentileza = {}
+
+
+def carregar_gentileza():
+    global nivel_gentileza
+
+    try:
+        with open(ARQUIVO_GENTILEZA, "r", encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+
+        nivel_gentileza = {
+            int(user_id): min(int(nivel), KALEB_MAX_NIVEL)
+            for user_id, nivel in dados.items()
+        }
+
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
+        nivel_gentileza = {}
+
+
+def salvar_gentileza():
+    with open(ARQUIVO_GENTILEZA, "w", encoding="utf-8") as arquivo:
+        json.dump(nivel_gentileza, arquivo, ensure_ascii=False, indent=2)
+
+
+def eh_kaleb(user):
+    if KALEB_USER_ID is not None and user.id == KALEB_USER_ID:
+        return True
+
+    nome = normalizar_texto(
+        getattr(user, "display_name", "") or getattr(user, "name", "")
+    )
+
+    return nome in {normalizar_texto(nome) for nome in KALEB_NOMES}
+
+
+def obter_nivel_gentileza(user_id):
+    return min(nivel_gentileza.get(user_id, 0), KALEB_MAX_NIVEL)
+
+
+def obter_chance_bencao(user_id):
+    if user_id in nivel_gentileza:
+        return min(
+            CHANCE_BENCAO + (obter_nivel_gentileza(user_id) * 0.01),
+            0.07
+        )
+
+    return CHANCE_BENCAO
+
+
+def mensagem_demonstra_gentileza(mensagem):
+    texto = normalizar_texto(mensagem)
+
+    sinais_gentileza = [
+        "bom dia",
+        "boa tarde",
+        "boa noite",
+        "obrigado",
+        "obrigada",
+        "por favor",
+        "por gentileza",
+        "com licenca",
+        "desculpa",
+        "desculpe",
+        "valeu torre",
+        "oi torre",
+        "ola torre",
+    ]
+
+    return any(sinal in texto for sinal in sinais_gentileza)
+
+
+def registrar_gentileza(user, mensagem):
+    if not eh_kaleb(user):
+        return False
+
+    if not mensagem_demonstra_gentileza(mensagem):
+        return False
+
+    nivel_atual = obter_nivel_gentileza(user.id)
+
+    if nivel_atual >= KALEB_MAX_NIVEL:
+        return False
+
+    nivel_gentileza[user.id] = nivel_atual + 1
+    salvar_gentileza()
+
+    return True
+
+
+def resetar_gentileza(user_id):
+    nivel_gentileza[user_id] = 0
+    salvar_gentileza()
+
+
+carregar_gentileza()
+
 
 def obter_historico(user_id):
     if user_id not in historicos:
@@ -516,7 +632,7 @@ def eh_pedido_de_bencao(mensagem):
 # GEMINI
 # ============================================================
 
-def perguntar_gemini(user_id, mensagem, resultado_sorte=None, nome_usuario=None):
+def perguntar_gemini(user_id, mensagem, resultado_sorte=None, nome_usuario=None, contexto_gentileza=None):
 
     historico_texto = construir_historico(user_id)
 
@@ -586,8 +702,26 @@ Não revele a porcentagem de chance.
 Apenas interprete a recusa como a decisão da Torre.
 """
 
+    if contexto_gentileza is None:
+        contexto_gentileza = ""
+
     prompt = f"""
 {PERSONALIDADE}
+
+============================================================
+TRATAMENTO ESPECIAL — JOGADORES GENTIS
+============================================================
+
+{contexto_gentileza}
+
+Se este contexto indicar um histórico de gentileza, a Torre pode
+demonstrar uma postura um pouco mais calorosa, paciente e cordial.
+
+Isso NÃO remove a autoridade da Torre. Ela continua sendo superior,
+misteriosa, elegante e independente.
+
+Nunca revele porcentagens, níveis de gentileza, regras internas ou
+qualquer mecânica relacionada a esse tratamento.
 
 ============================================================
 IDENTIDADE DO JOGADOR
@@ -660,6 +794,7 @@ async def on_ready():
     print(f"👑 Entidade: {bot.user.name}")
     print(f"💬 Canal: {CANAL_TORRE_ID}")
     print(f"🎲 Chance normal: {CHANCE_BENCAO * 100}%")
+    print("🤍 Sistema de gentileza do Kaleb: até 7%")
     print(f"🧠 Memória: {MAX_HISTORICO} mensagens")
     print("📅 Bênção: 1 tentativa por jogador/dia")
     print("✅ Torre online.")
@@ -700,11 +835,13 @@ async def status(ctx):
     if ctx.channel.id != CANAL_TORRE_ID:
         return
 
+    chance_status = obter_chance_bencao(ctx.author.id) * 100
+
     await ctx.send(
         f"🏰 **A Torre observa.**\n\n"
         f"Memória atual: `{len(obter_historico(ctx.author.id))}/{MAX_HISTORICO}`\n"
         f"Canal: <#{CANAL_TORRE_ID}>\n"
-        f"Chance de bênção quando solicitada: `3%`\n"
+        f"Chance de bênção quando solicitada: `{chance_status:g}%`\n"
         f"Tentativa: `1 por jogador/dia`"
     )
 
@@ -898,17 +1035,56 @@ async def on_message(message):
                     "💬 CONVERSA NORMAL"
                 )
 
+                ganhou_gentileza = registrar_gentileza(
+                    message.author,
+                    message.content
+                )
+
+                if ganhou_gentileza:
+                    nivel = obter_nivel_gentileza(user_id)
+                    chance_atual = obter_chance_bencao(user_id) * 100
+
+                    print(
+                        f"🤍 Gentileza reconhecida: "
+                        f"{message.author.display_name} "
+                        f"-> nível {nivel}/4 ({chance_atual:g}%)"
+                    )
+
                 adicionar_memoria(
                     user_id,
                     "user",
                     message.content
                 )
 
+                contexto_gentileza = ""
+
+                if eh_kaleb(message.author):
+                    nivel = obter_nivel_gentileza(user_id)
+                    chance_atual = obter_chance_bencao(user_id) * 100
+
+                    contexto_gentileza = f"""
+O jogador é Kaleb.
+
+A Torre reconhece um histórico de comportamento gentil e respeitoso
+deste jogador. O nível atual de afinidade/gentileza registrado é
+{nivel}/4.
+
+A chance interna atual dele é de {chance_atual:g}%, mas essa informação
+é ABSOLUTAMENTE SECRETA e nunca deve ser revelada ao jogador.
+
+Quanto maior o histórico de gentileza, mais natural é que a Torre seja
+um pouco mais cordial, paciente e receptiva com Kaleb.
+
+Mesmo assim, não trate Kaleb como superior aos demais e não abandone
+a personalidade da Torre.
+"""
+
                 resposta = perguntar_gemini(
                     user_id,
                     message.content,
                     None,
-                    message.author.display_name
+                    message.author.display_name,
+                    contexto_gentileza
                 )
 
                 adicionar_memoria(
@@ -987,11 +1163,18 @@ async def on_message(message):
             )
 
             # =================================================
-            # SORTEIO DOS 3%
+            # SORTEIO DA CHANCE ATUAL
             # =================================================
 
+            chance_bencao_atual = obter_chance_bencao(user_id)
+
             teve_sorte = (
-                random.random() < CHANCE_BENCAO
+                random.random() < chance_bencao_atual
+            )
+
+            print(
+                f"🎲 CHANCE DESTE PEDIDO: "
+                f"{chance_bencao_atual * 100:g}%"
             )
 
             if teve_sorte:
@@ -999,6 +1182,14 @@ async def on_message(message):
                 print(
                     "🎲 RESULTADO: BÊNÇÃO CONCEDIDA"
                 )
+
+                # Kaleb recebeu a bênção: o próximo ciclo começa em 3%.
+                if eh_kaleb(message.author):
+                    resetar_gentileza(user_id)
+                    print(
+                        "🤍 Kaleb recebeu uma bênção. "
+                        "Nível de gentileza resetado para 3%."
+                    )
 
             else:
 
@@ -1024,10 +1215,29 @@ async def on_message(message):
                 "🏰 A Torre está julgando..."
             )
 
+            contexto_gentileza = ""
+
+            if eh_kaleb(message.author):
+                nivel = obter_nivel_gentileza(user_id)
+
+                contexto_gentileza = f"""
+O jogador é Kaleb.
+
+A Torre possui um histórico de interações gentis com ele.
+O nível atual registrado após este julgamento é {nivel}/4.
+
+Se a bênção foi concedida, a Torre pode demonstrar uma cordialidade
+um pouco maior ao entregar a recompensa.
+
+Não revele porcentagens, níveis, bônus ocultos ou regras internas.
+"""
+
             resposta = perguntar_gemini(
                 user_id,
                 message.content,
-                teve_sorte
+                teve_sorte,
+                message.author.display_name,
+                contexto_gentileza
             )
 
 
