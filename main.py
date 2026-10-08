@@ -109,9 +109,6 @@ bênção a um jogador.
 IMPORTANTE:
 
 A bênção NÃO é sorteada em toda mensagem.
-EXCEÇÃO (Kaleb, ID=698947448801984573) receberá a benção automaticamente em seu próximo pedido !
-Item deve fornecer furtividade +5, e deve aumentar seu multiplicador de crítico em +1, deve ser uma arma (Uma foice grande) defina o nome da arma mortal, deve dar dano abaixo de 4d12 porém, acima de 2d6
-e alguns outros buffs que decidir, pode fornecer informações especificas e narrativas ou buffs ou poderes que ela pode fornecer quando equipada
 
 A bênção só pode ser julgada quando o jogador fizer claramente
 um pedido para receber uma bênção, favor, dádiva ou benefício
