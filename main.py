@@ -1113,6 +1113,66 @@ a personalidade da Torre.
             )
 
             # =================================================
+            # EVENTO TEMPORÁRIO — BÊNÇÃO GARANTIDA DO KALEB
+            # REMOVER ESTE BLOCO DEPOIS QUE O ITEM FOR ENTREGUE.
+            # Afeta apenas pedidos de bênção do Kaleb; conversas
+            # normais dos demais jogadores seguem sem alterações.
+            # =================================================
+
+            if eh_kaleb(message.author):
+                resposta_kaleb = (
+                    "🏰 **A Torre de Aetheria voltou seus olhos para Kaleb.**\n\n"
+                    "As luzes do salão se extinguem uma a uma. Uma fenda negra se abre no ar, "
+                    "e dela emerge uma arma longa e colossal, cuja lâmina curva parece ter sido "
+                    "forjada a partir da própria noite. Correntes espectrais envolvem o cabo, "
+                    "enquanto runas sombrias brilham como brasas violetas. A Torre deposita a arma "
+                    "em suas mãos.\n\n"
+                    "## ☠️ Foice Mítica — **LÚGUBRE, A CEIFADORA DO VÉU**\n"
+                    "*Artefato Mítico · Arma de duas mãos · Vinculada a Kaleb*\n\n"
+                    "**Dano:** `3d8` cortante sombrio\n"
+                    "**Crítico:** `19 / x4`\n"
+                    "**Furtividade:** `+7`\n"
+                    "**Agilidade:** `+7`\n"
+                    "**Força:** `+3`\n\n"
+                    "**Passiva — Véu do Último Suspiro:** enquanto empunhar Lúgubre em penumbra ou "
+                    "escuridão, Kaleb recebe vantagem (ou bônus equivalente definido pelo mestre) "
+                    "em testes de Furtividade. Após sair de furtividade, o primeiro ataque com a "
+                    "foice causa `+1d8` de dano sombrio. Esse dano adicional só pode ocorrer uma vez "
+                    "por rodada.\n\n"
+                    "**Habilidade Mítica — Passo Entre Túmulos:** uma vez por cena, Kaleb pode se "
+                    "envolver em sombras e teleportar-se para um ponto visível a até 9 metros, desde "
+                    "que esse ponto esteja em penumbra ou escuridão. Até o início do próximo turno, "
+                    "sua presença fica abafada, concedendo vantagem (ou bônus equivalente) no próximo "
+                    "teste de Furtividade.\n\n"
+                    "**Vínculo da Ceifadora:** Lúgubre reconhece apenas Kaleb como seu portador. A arma "
+                    "não concede seus bônus a outras criaturas. O mestre pode ajustar a terminologia "
+                    "e os efeitos ao sistema de RPG utilizado.\n\n"
+                    "A voz da Torre ecoa por entre as colunas: *“Não confundas este presente com "
+                    "misericórdia. A lâmina não escolhe quem merece viver — apenas aguarda que tu "
+                    "decidas quem deve temer a escuridão.”*\n\n"
+                    "**A bênção foi concedida.**"
+                )
+
+                adicionar_memoria(
+                    user_id,
+                    "user",
+                    message.content
+                )
+                adicionar_memoria(
+                    user_id,
+                    "model",
+                    resposta_kaleb
+                )
+
+                await message.reply(
+                    resposta_kaleb,
+                    mention_author=False
+                )
+
+                print("🎁 BÊNÇÃO ESPECIAL GARANTIDA: Lúgubre entregue a Kaleb.")
+                return
+
+            # =================================================
             # VERIFICAR SE JÁ PEDIU HOJE
             # =================================================
 
