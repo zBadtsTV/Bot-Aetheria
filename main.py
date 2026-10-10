@@ -331,45 +331,6 @@ bot = commands.Bot(
 
 
 # ============================================================
-# ENVIO DE RESPOSTAS LONGAS (limite do Discord: 2000 caracteres)
-# ============================================================
-
-LIMITE_MENSAGEM_DISCORD = 1900  # margem de segurança abaixo do limite de 2000
-
-
-def dividir_mensagem(texto, limite=LIMITE_MENSAGEM_DISCORD):
-    """Divide um texto em partes sem ultrapassar o limite do Discord."""
-    partes = []
-    texto = str(texto or "").strip()
-
-    while len(texto) > limite:
-        corte = texto.rfind("\\n", 0, limite + 1)
-        if corte < limite // 2:
-            corte = texto.rfind(" ", 0, limite + 1)
-        if corte < limite // 2:
-            corte = limite
-
-        partes.append(texto[:corte].rstrip())
-        texto = texto[corte:].lstrip()
-
-    if texto:
-        partes.append(texto)
-
-    return partes or ["..."]
-
-
-async def enviar_resposta_longa(canal, texto, mensagem_origem=None):
-    """Envia respostas em várias mensagens para evitar HTTP 400 / erro 50035."""
-    partes = dividir_mensagem(texto)
-
-    for indice, parte in enumerate(partes):
-        if indice == 0 and mensagem_origem is not None:
-            await mensagem_origem.reply(parte, mention_author=False)
-        else:
-            await canal.send(parte)
-
-
-# ============================================================
 # MEMÓRIA
 # ============================================================
 
@@ -606,7 +567,7 @@ def contexto_classes_jogadores():
             f"- {dados['nome']}: classe {dados['classe']}; "
             f"áreas de afinidade: {dados['especialidade']}."
         )
-    return "\\n".join(linhas)
+    return "\n".join(linhas)
 
 
 def perguntar_gemini(user_id, mensagem, resultado_sorte=None, nome_usuario=None):
@@ -764,6 +725,60 @@ Responda naturalmente, como uma entidade suprema dentro de um RPG.
 
 
 # ============================================================
+# ENVIO SEGURO (LIMITE DE 2000 CARACTERES DO DISCORD)
+# ============================================================
+
+LIMITE_DISCORD = 2000
+
+
+def dividir_mensagem(texto, limite=LIMITE_DISCORD):
+    """Divide o texto em partes de até `limite` caracteres,
+    preferindo quebrar em parágrafos, depois linhas, depois espaços."""
+    texto = (texto or "").strip()
+
+    if not texto:
+        return ["..."]
+
+    partes = []
+
+    while len(texto) > limite:
+        corte = texto.rfind("\n\n", 0, limite)
+
+        if corte < limite // 2:
+            corte = texto.rfind("\n", 0, limite)
+
+        if corte < limite // 2:
+            corte = texto.rfind(" ", 0, limite)
+
+        if corte <= 0:
+            corte = limite
+
+        partes.append(texto[:corte].rstrip())
+        texto = texto[corte:].lstrip()
+
+    if texto:
+        partes.append(texto)
+
+    return partes
+
+
+async def responder(message, texto):
+    """Responde à mensagem, dividindo em várias se passar de 2000."""
+    partes = dividir_mensagem(texto)
+
+    await message.reply(partes[0], mention_author=False)
+
+    for parte in partes[1:]:
+        await message.channel.send(parte)
+
+
+async def enviar(ctx, texto):
+    """ctx.send dividindo em várias mensagens se necessário."""
+    for parte in dividir_mensagem(texto):
+        await ctx.send(parte)
+
+
+# ============================================================
 # BOT ONLINE
 # ============================================================
 
@@ -906,7 +921,7 @@ async def godteste(ctx):
             # RESPOSTA
             # ------------------------------------------------
 
-            await enviar_resposta_longa(ctx.channel, resposta)
+            await enviar(ctx, resposta)
 
             print(
                 f"🏰 Bênção de teste: {resposta}"
@@ -1033,9 +1048,7 @@ async def on_message(message):
                     resposta
                 )
 
-                await enviar_resposta_longa(
-                    message.channel, resposta, mensagem_origem=message
-                )
+                await responder(message, resposta)
 
                 print(
                     f"🏰 Torre: {resposta}"
@@ -1112,9 +1125,7 @@ async def on_message(message):
                     resposta_kaleb
                 )
 
-                await enviar_resposta_longa(
-                    message.channel, resposta_kaleb, mensagem_origem=message
-                )
+                await responder(message, resposta_kaleb)
 
                 print("🎁 BÊNÇÃO GARANTIDA: Lúgubre entregue a Kaleb.")
                 return
@@ -1155,9 +1166,7 @@ async def on_message(message):
                     resposta
                 )
 
-                await enviar_resposta_longa(
-                    message.channel, resposta, mensagem_origem=message
-                )
+                await responder(message, resposta)
 
                 return
 
@@ -1236,9 +1245,7 @@ async def on_message(message):
             # ENVIAR
             # =================================================
 
-            await enviar_resposta_longa(
-                message.channel, resposta, mensagem_origem=message
-            )
+            await responder(message, resposta)
 
             print(
                 f"🏰 Torre: {resposta}"
