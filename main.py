@@ -331,6 +331,45 @@ bot = commands.Bot(
 
 
 # ============================================================
+# ENVIO DE RESPOSTAS LONGAS (limite do Discord: 2000 caracteres)
+# ============================================================
+
+LIMITE_MENSAGEM_DISCORD = 1900  # margem de segurança abaixo do limite de 2000
+
+
+def dividir_mensagem(texto, limite=LIMITE_MENSAGEM_DISCORD):
+    """Divide um texto em partes sem ultrapassar o limite do Discord."""
+    partes = []
+    texto = str(texto or "").strip()
+
+    while len(texto) > limite:
+        corte = texto.rfind("\\n", 0, limite + 1)
+        if corte < limite // 2:
+            corte = texto.rfind(" ", 0, limite + 1)
+        if corte < limite // 2:
+            corte = limite
+
+        partes.append(texto[:corte].rstrip())
+        texto = texto[corte:].lstrip()
+
+    if texto:
+        partes.append(texto)
+
+    return partes or ["..."]
+
+
+async def enviar_resposta_longa(canal, texto, mensagem_origem=None):
+    """Envia respostas em várias mensagens para evitar HTTP 400 / erro 50035."""
+    partes = dividir_mensagem(texto)
+
+    for indice, parte in enumerate(partes):
+        if indice == 0 and mensagem_origem is not None:
+            await mensagem_origem.reply(parte, mention_author=False)
+        else:
+            await canal.send(parte)
+
+
+# ============================================================
 # MEMÓRIA
 # ============================================================
 
@@ -867,9 +906,7 @@ async def godteste(ctx):
             # RESPOSTA
             # ------------------------------------------------
 
-            await ctx.send(
-                resposta
-            )
+            await enviar_resposta_longa(ctx.channel, resposta)
 
             print(
                 f"🏰 Bênção de teste: {resposta}"
@@ -996,9 +1033,8 @@ async def on_message(message):
                     resposta
                 )
 
-                await message.reply(
-                    resposta,
-                    mention_author=False
+                await enviar_resposta_longa(
+                    message.channel, resposta, mensagem_origem=message
                 )
 
                 print(
@@ -1076,9 +1112,8 @@ async def on_message(message):
                     resposta_kaleb
                 )
 
-                await message.reply(
-                    resposta_kaleb,
-                    mention_author=False
+                await enviar_resposta_longa(
+                    message.channel, resposta_kaleb, mensagem_origem=message
                 )
 
                 print("🎁 BÊNÇÃO GARANTIDA: Lúgubre entregue a Kaleb.")
@@ -1120,9 +1155,8 @@ async def on_message(message):
                     resposta
                 )
 
-                await message.reply(
-                    resposta,
-                    mention_author=False
+                await enviar_resposta_longa(
+                    message.channel, resposta, mensagem_origem=message
                 )
 
                 return
@@ -1202,9 +1236,8 @@ async def on_message(message):
             # ENVIAR
             # =================================================
 
-            await message.reply(
-                resposta,
-                mention_author=False
+            await enviar_resposta_longa(
+                message.channel, resposta, mensagem_origem=message
             )
 
             print(
