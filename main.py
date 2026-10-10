@@ -793,6 +793,7 @@ async def on_ready():
     print(f"🎲 Chance fixa de bênção para todos: {CHANCE_BENCAO * 100:g}%")
     print(f"🧠 Memória: {MAX_HISTORICO} mensagens")
     print("📅 Bênção: 1 tentativa por jogador/dia")
+    print(f"📏 Limite de mensagem aumentado: respostas acima de {LIMITE_DISCORD} caracteres agora são divididas em várias mensagens.")
     print("✅ Torre online.")
     print("=" * 55)
 
