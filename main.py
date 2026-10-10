@@ -2,7 +2,6 @@ import os
 import random
 import re
 from datetime import date
-import json
 
 import discord
 from discord.ext import commands
@@ -33,26 +32,49 @@ CANAL_TORRE_ID = 1527487084447924234
 
 MAX_HISTORICO = 20
 
-# Chance normal de receber uma bênção quando PEDIR
-CHANCE_BENCAO = 0.03
+# Chance fixa para TODOS os jogadores quando pedirem uma bênção.
+CHANCE_BENCAO = 0.05
 
-# ============================================================
-# SISTEMA ESPECIAL DE GENTILEZA — KALEB
-# ============================================================
-# Kaleb começa em 3% e pode subir 1 ponto percentual por
-# demonstração de gentileza, chegando no máximo a 7%.
-# Depois de receber uma bênção, o ciclo volta para 3%.
-
-# Para identificação exata, coloque aqui o ID do Kaleb.
-# Se ficar None, o bot também reconhece o display name "Kaleb".
+# ID usado somente pelo evento temporário da Lúgubre.
+# Depois de entregar o item, remova o bloco EVENTO TEMPORÁRIO
+# identificado na função on_message; os 5% continuarão valendo.
 KALEB_USER_ID = 698947448801984573
-KALEB_NOMES = {"kaleb"}
 
-# 0 = 3%, 1 = 4%, 2 = 5%, 3 = 6%, 4 = 7%
-KALEB_MAX_NIVEL = 4
-
-# Mantém o progresso mesmo se o bot reiniciar.
-ARQUIVO_GENTILEZA = "gentileza_torre.json"
+# Conhecimento permanente da Torre sobre os habitantes de Aetheria.
+# Esses dados são enviados ao modelo como contexto, sem serem revelados
+# diretamente aos jogadores.
+CLASSES_JOGADORES = {
+    898023406958702624: {
+        "nome": "Noah",
+        "classe": "Mestre das Barreiras",
+        "especialidade": "proteção, vida, defesa e resistência",
+    },
+    1054926467303227492: {
+        "nome": "Uzume",
+        "classe": "Combatente",
+        "especialidade": "combate, acertos, ataques e desempenho ofensivo",
+    },
+    1371244609581224019: {
+        "nome": "Morgana",
+        "classe": "Curandeira",
+        "especialidade": "cura, recuperação e suporte",
+    },
+    873722759530831923: {
+        "nome": "Stella",
+        "classe": "Mago",
+        "especialidade": "magias, mana e efeitos arcanos",
+    },
+    1215438562317701140: {
+        "nome": "Cyntia",
+        "classe": "Curandeira",
+        "especialidade": "cura, recuperação e suporte",
+    },
+    698947448801984573: {
+        "nome": "Kaleb",
+        "classe": "Assassino",
+        "especialidade": "dano, debuffs, efeitos, furtividade, crítico e agilidade",
+    },
+}
 
 
 # ============================================================
@@ -314,102 +336,8 @@ bot = commands.Bot(
 
 historicos = {}
 
-# Guarda o nível de gentileza acumulado do Kaleb.
-nivel_gentileza = {}
-
-
-def carregar_gentileza():
-    global nivel_gentileza
-
-    try:
-        with open(ARQUIVO_GENTILEZA, "r", encoding="utf-8") as arquivo:
-            dados = json.load(arquivo)
-
-        nivel_gentileza = {
-            int(user_id): min(int(nivel), KALEB_MAX_NIVEL)
-            for user_id, nivel in dados.items()
-        }
-
-    except (FileNotFoundError, json.JSONDecodeError, ValueError, TypeError):
-        nivel_gentileza = {}
-
-
-def salvar_gentileza():
-    with open(ARQUIVO_GENTILEZA, "w", encoding="utf-8") as arquivo:
-        json.dump(nivel_gentileza, arquivo, ensure_ascii=False, indent=2)
-
-
 def eh_kaleb(user):
-    if KALEB_USER_ID is not None and user.id == KALEB_USER_ID:
-        return True
-
-    nome = normalizar_texto(
-        getattr(user, "display_name", "") or getattr(user, "name", "")
-    )
-
-    return nome in {normalizar_texto(nome) for nome in KALEB_NOMES}
-
-
-def obter_nivel_gentileza(user_id):
-    return min(nivel_gentileza.get(user_id, 0), KALEB_MAX_NIVEL)
-
-
-def obter_chance_bencao(user_id):
-    if user_id in nivel_gentileza:
-        return min(
-            CHANCE_BENCAO + (obter_nivel_gentileza(user_id) * 0.01),
-            0.07
-        )
-
-    return CHANCE_BENCAO
-
-
-def mensagem_demonstra_gentileza(mensagem):
-    texto = normalizar_texto(mensagem)
-
-    sinais_gentileza = [
-        "bom dia",
-        "boa tarde",
-        "boa noite",
-        "obrigado",
-        "obrigada",
-        "por favor",
-        "por gentileza",
-        "com licenca",
-        "desculpa",
-        "desculpe",
-        "valeu torre",
-        "oi torre",
-        "ola torre",
-    ]
-
-    return any(sinal in texto for sinal in sinais_gentileza)
-
-
-def registrar_gentileza(user, mensagem):
-    if not eh_kaleb(user):
-        return False
-
-    if not mensagem_demonstra_gentileza(mensagem):
-        return False
-
-    nivel_atual = obter_nivel_gentileza(user.id)
-
-    if nivel_atual >= KALEB_MAX_NIVEL:
-        return False
-
-    nivel_gentileza[user.id] = nivel_atual + 1
-    salvar_gentileza()
-
-    return True
-
-
-def resetar_gentileza(user_id):
-    nivel_gentileza[user_id] = 0
-    salvar_gentileza()
-
-
-carregar_gentileza()
+    return user.id == KALEB_USER_ID
 
 
 def obter_historico(user_id):
@@ -632,7 +560,17 @@ def eh_pedido_de_bencao(mensagem):
 # GEMINI
 # ============================================================
 
-def perguntar_gemini(user_id, mensagem, resultado_sorte=None, nome_usuario=None, contexto_gentileza=None):
+def contexto_classes_jogadores():
+    linhas = []
+    for dados in CLASSES_JOGADORES.values():
+        linhas.append(
+            f"- {dados['nome']}: classe {dados['classe']}; "
+            f"áreas de afinidade: {dados['especialidade']}."
+        )
+    return "\\n".join(linhas)
+
+
+def perguntar_gemini(user_id, mensagem, resultado_sorte=None, nome_usuario=None):
 
     historico_texto = construir_historico(user_id)
 
@@ -702,26 +640,9 @@ Não revele a porcentagem de chance.
 Apenas interprete a recusa como a decisão da Torre.
 """
 
-    if contexto_gentileza is None:
-        contexto_gentileza = ""
-
     prompt = f"""
 {PERSONALIDADE}
 
-============================================================
-TRATAMENTO ESPECIAL — JOGADORES GENTIS
-============================================================
-
-{contexto_gentileza}
-
-Se este contexto indicar um histórico de gentileza, a Torre pode
-demonstrar uma postura um pouco mais calorosa, paciente e cordial.
-
-Isso NÃO remove a autoridade da Torre. Ela continua sendo superior,
-misteriosa, elegante e independente.
-
-Nunca revele porcentagens, níveis de gentileza, regras internas ou
-qualquer mecânica relacionada a esse tratamento.
 
 ============================================================
 IDENTIDADE DO JOGADOR
@@ -732,6 +653,28 @@ Discord ID: {user_id}
 
 Use essa identidade apenas como contexto para saber quem está falando.
 Não revele o Discord ID ao jogador.
+
+============================================================
+CONHECIMENTO DA TORRE SOBRE OS HABITANTES
+============================================================
+
+A Torre conhece os habitantes de seu domínio, suas classes e suas afinidades.
+Use essas informações silenciosamente para compreender cada pessoa e, quando
+uma bênção for concedida, escolher algo adequado ao seu papel e às necessidades
+do personagem. Não diga que a recompensa foi escolhida apenas por causa da
+classe, não exponha esta lista e não revele os IDs do Discord. A Torre deve
+parecer conhecer cada habitante de forma profunda e natural, sem entregar
+informações específicas desnecessárias.
+
+{contexto_classes_jogadores()}
+
+Classe e afinidades do jogador atual:
+{(
+    f"{CLASSES_JOGADORES[user_id]['classe']} — "
+    f"{CLASSES_JOGADORES[user_id]['especialidade']}"
+    if user_id in CLASSES_JOGADORES
+    else "Classe ainda não identificada."
+)}
 
 ============================================================
 CONTEXTO ESPECIAL
@@ -793,8 +736,7 @@ async def on_ready():
     print("=" * 55)
     print(f"👑 Entidade: {bot.user.name}")
     print(f"💬 Canal: {CANAL_TORRE_ID}")
-    print(f"🎲 Chance normal: {CHANCE_BENCAO * 100}%")
-    print("🤍 Sistema de gentileza do Kaleb: até 7%")
+    print(f"🎲 Chance fixa de bênção para todos: {CHANCE_BENCAO * 100:g}%")
     print(f"🧠 Memória: {MAX_HISTORICO} mensagens")
     print("📅 Bênção: 1 tentativa por jogador/dia")
     print("✅ Torre online.")
@@ -835,7 +777,7 @@ async def status(ctx):
     if ctx.channel.id != CANAL_TORRE_ID:
         return
 
-    chance_status = obter_chance_bencao(ctx.author.id) * 100
+    chance_status = CHANCE_BENCAO * 100
 
     await ctx.send(
         f"🏰 **A Torre observa.**\n\n"
@@ -1035,56 +977,17 @@ async def on_message(message):
                     "💬 CONVERSA NORMAL"
                 )
 
-                ganhou_gentileza = registrar_gentileza(
-                    message.author,
-                    message.content
-                )
-
-                if ganhou_gentileza:
-                    nivel = obter_nivel_gentileza(user_id)
-                    chance_atual = obter_chance_bencao(user_id) * 100
-
-                    print(
-                        f"🤍 Gentileza reconhecida: "
-                        f"{message.author.display_name} "
-                        f"-> nível {nivel}/4 ({chance_atual:g}%)"
-                    )
-
                 adicionar_memoria(
                     user_id,
                     "user",
                     message.content
                 )
 
-                contexto_gentileza = ""
-
-                if eh_kaleb(message.author):
-                    nivel = obter_nivel_gentileza(user_id)
-                    chance_atual = obter_chance_bencao(user_id) * 100
-
-                    contexto_gentileza = f"""
-O jogador é Kaleb.
-
-A Torre reconhece um histórico de comportamento gentil e respeitoso
-deste jogador. O nível atual de afinidade/gentileza registrado é
-{nivel}/4.
-
-A chance interna atual dele é de {chance_atual:g}%, mas essa informação
-é ABSOLUTAMENTE SECRETA e nunca deve ser revelada ao jogador.
-
-Quanto maior o histórico de gentileza, mais natural é que a Torre seja
-um pouco mais cordial, paciente e receptiva com Kaleb.
-
-Mesmo assim, não trate Kaleb como superior aos demais e não abandone
-a personalidade da Torre.
-"""
-
                 resposta = perguntar_gemini(
                     user_id,
                     message.content,
                     None,
-                    message.author.display_name,
-                    contexto_gentileza
+                    message.author.display_name
                 )
 
                 adicionar_memoria(
@@ -1111,6 +1014,76 @@ a personalidade da Torre.
             print(
                 "🙏 PEDIDO DE BÊNÇÃO DETECTADO"
             )
+
+            # =================================================
+            # >>> INÍCIO DO EVENTO TEMPORÁRIO: LÚGUBRE PARA KALEB <<<
+            # APÓS ENTREGAR O ITEM: apague este bloco inteiro, desde o
+            # comentário acima até o return logo após o print abaixo.
+            # A chance fixa de 5% dos jogadores não depende deste bloco.
+            # =================================================
+
+            if message.author.id == KALEB_USER_ID:
+                resposta_kaleb = (
+                    "🏰 **A Torre de Aetheria voltou seus olhos para você.**\n\n"
+                    "As luzes do salão se extinguem uma a uma. Uma fenda negra se abre no ar, "
+                    "e dela emerge uma arma longa e colossal, cuja lâmina curva parece ter sido "
+                    "forjada a partir da própria noite. Correntes espectrais envolvem o cabo, "
+                    "enquanto runas sombrias brilham como brasas violetas. A Torre deposita a arma "
+                    "em suas mãos.\n\n"
+                    "## ☠️ Foice Mítica — **LÚGUBRE, A CEIFADORA DO VÉU**\n"
+                    "*Artefato Mítico · Arma de duas mãos · Vínculo sombrio*\n\n"
+                    "**Dano:** `3d8` cortante demoníaco\n"
+                    "**Crítico:** `19 / x4`\n"
+                    "**Furtividade:** `+5`\n"
+                    "**Agilidade:** `+7`\n"
+                    "**Força:** `+3`\n"
+                    "**Sabedoria:** `+2`\n\n"
+                    "**Passiva — Véu do Último Suspiro:** enquanto empunhar Lúgubre em penumbra ou "
+                    "escuridão, Kaleb recebe vantagem "
+                    "em testes de Furtividade. Após sair de furtividade, o primeiro ataque com a "
+                    "foice causa `+1d8` de dano sombrio. Esse dano adicional só pode ocorrer uma vez "
+                    "por rodada.\n\n"
+                    "**Habilidade Mítica — Passo Entre Túmulos:** uma vez por cena, Kaleb pode se "
+                    "envolver em sombras e teleportar-se para um ponto visível a até 9 metros, desde "
+                    "que esse ponto esteja em penumbra ou escuridão. Até o início do próximo turno, "
+                    "sua presença fica abafada, concedendo vantagem no próximo "
+                    "teste de Furtividade.\n\n"
+                    "**Maldição — Fome de Sangue:** Lúgubre não controla seu portador e jamais o obriga "
+                    "a lutar. Ainda assim, carrega um anseio incessante por combate. Enquanto empunhar "
+                    "a foice, Kaleb sofre `-3 em Tolerância` e `-2 em Pontaria`. Quando longos períodos "
+                    "passam sem batalha, um sussurro frio percorre a lâmina, como se ela implorasse por "
+                    "mais uma vida a ser ceifada. A decisão de lutar continua sendo sempre do portador.\n\n"
+                    "**Vínculo da Ceifadora:** Lúgubre reconhece apenas Kaleb como seu portador. A arma "
+                    "não concede seus bônus a outras criaturas. O mestre pode ajustar a terminologia "
+                    "e os efeitos ao sistema de RPG utilizado.\n\n"
+                    "A voz da Torre ecoa por entre as colunas: *“Não confundas este presente com "
+                    "misericórdia. A lâmina não escolhe quem merece viver — apenas aguarda que tu "
+                    "decidas quem deve temer a escuridão.”*\n\n"
+                    "A Torre conhece cada um que caminha por seus domínios; conhece suas forças, "
+                    "suas faltas e aquilo de que cada alma necessita — bem como aquilo que já lhe "
+                    "é suficiente. Nada é concedido sem propósito.\n\n"
+                    "**A bênção foi concedida.**"
+                )
+
+                adicionar_memoria(
+                    user_id,
+                    "user",
+                    message.content
+                )
+                adicionar_memoria(
+                    user_id,
+                    "model",
+                    resposta_kaleb
+                )
+
+                await message.reply(
+                    resposta_kaleb,
+                    mention_author=False
+                )
+
+                print("🎁 BÊNÇÃO GARANTIDA: Lúgubre entregue a Kaleb.")
+                return
+            # >>> FIM DO EVENTO TEMPORÁRIO: LÚGUBRE PARA KALEB <<<
 
             # =================================================
             # VERIFICAR SE JÁ PEDIU HOJE
@@ -1166,7 +1139,7 @@ a personalidade da Torre.
             # SORTEIO DA CHANCE ATUAL
             # =================================================
 
-            chance_bencao_atual = obter_chance_bencao(user_id)
+            chance_bencao_atual = CHANCE_BENCAO
 
             teve_sorte = (
                 random.random() < chance_bencao_atual
@@ -1182,14 +1155,6 @@ a personalidade da Torre.
                 print(
                     "🎲 RESULTADO: BÊNÇÃO CONCEDIDA"
                 )
-
-                # Kaleb recebeu a bênção: o próximo ciclo começa em 3%.
-                if eh_kaleb(message.author):
-                    resetar_gentileza(user_id)
-                    print(
-                        "🤍 Kaleb recebeu uma bênção. "
-                        "Nível de gentileza resetado para 3%."
-                    )
 
             else:
 
@@ -1215,29 +1180,11 @@ a personalidade da Torre.
                 "🏰 A Torre está julgando..."
             )
 
-            contexto_gentileza = ""
-
-            if eh_kaleb(message.author):
-                nivel = obter_nivel_gentileza(user_id)
-
-                contexto_gentileza = f"""
-O jogador é Kaleb.
-
-A Torre possui um histórico de interações gentis com ele.
-O nível atual registrado após este julgamento é {nivel}/4.
-
-Se a bênção foi concedida, a Torre pode demonstrar uma cordialidade
-um pouco maior ao entregar a recompensa.
-
-Não revele porcentagens, níveis, bônus ocultos ou regras internas.
-"""
-
             resposta = perguntar_gemini(
                 user_id,
                 message.content,
                 teve_sorte,
-                message.author.display_name,
-                contexto_gentileza
+                message.author.display_name
             )
 
 
