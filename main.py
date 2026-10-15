@@ -1,6 +1,7 @@
 import os
 import random
 import re
+import asyncio
 from datetime import date
 
 import discord
@@ -290,6 +291,23 @@ A Torre concede.
 
 
 # ============================================================
+# CONFIGURAÇÕES DO GEMINI (TOLERÂNCIA A SOBRECARGA / ERRO 503)
+# ============================================================
+
+# Modelos em ordem de preferência. Se um estiver sobrecarregado,
+# insiste algumas vezes e depois tenta o próximo da lista.
+MODELOS_GEMINI = (
+    "gemini-3.8-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+)
+
+# Tentativas por modelo e espera inicial (dobra a cada falha, máx. 15s).
+TENTATIVAS_POR_MODELO = 4
+ESPERA_INICIAL_GEMINI = 2
+
+
+# ============================================================
 # VERIFICAÇÃO DAS CHAVES
 # ============================================================
 
@@ -570,7 +588,7 @@ def contexto_classes_jogadores():
     return "\n".join(linhas)
 
 
-def perguntar_gemini(user_id, mensagem, resultado_sorte=None, nome_usuario=None):
+async def perguntar_gemini(user_id, mensagem, resultado_sorte=None, nome_usuario=None):
 
     historico_texto = construir_historico(user_id)
 
@@ -716,12 +734,74 @@ Não mencione porcentagens.
 Responda naturalmente, como uma entidade suprema dentro de um RPG.
 """
 
-    response = gemini_client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt
-    )
+    ultimo_erro = None
 
-    return response.text.strip()
+    for modelo in MODELOS_GEMINI:
+        espera = ESPERA_INICIAL_GEMINI
+
+        for tentativa in range(1, TENTATIVAS_POR_MODELO + 1):
+            try:
+                response = await asyncio.to_thread(
+                    gemini_client.models.generate_content,
+                    model=modelo,
+                    contents=prompt,
+                )
+
+                texto_resposta = getattr(response, "text", None)
+                if not texto_resposta or not texto_resposta.strip():
+                    raise RuntimeError(
+                        f"O modelo {modelo} retornou uma resposta vazia."
+                    )
+
+                if modelo != MODELOS_GEMINI[0]:
+                    print(f"✅ Gemini respondeu usando modelo alternativo: {modelo}")
+                return texto_resposta.strip()
+
+            except Exception as erro:
+                ultimo_erro = erro
+                detalhe = str(erro).lower()
+                status = (
+                    getattr(erro, "code", None)
+                    or getattr(erro, "status_code", None)
+                    or getattr(erro, "status", None)
+                )
+                erro_temporario = (
+                    status in (429, 500, 502, 503, 504)
+                    or any(codigo in detalhe for codigo in (
+                        "429", "500", "502", "503", "504",
+                        "resource_exhausted", "unavailable", "high demand",
+                        "overloaded", "rate limit", "temporarily",
+                        "deadline exceeded", "timeout",
+                    ))
+                )
+                modelo_indisponivel = any(trecho in detalhe for trecho in (
+                    "not found", "not supported", "unknown model",
+                    "model is not available", "invalid model",
+                ))
+
+                # Erros de chave/permissão ou outros erros permanentes não
+                # melhoram ao repetir; devolve o erro real.
+                if not erro_temporario and not modelo_indisponivel:
+                    raise
+
+                print(
+                    f"⚠️ Modelo Gemini {modelo} falhou "
+                    f"(tentativa {tentativa}/{TENTATIVAS_POR_MODELO}): {erro}"
+                )
+
+                # Modelo inexistente: não adianta repetir, vai pro próximo.
+                if modelo_indisponivel and not erro_temporario:
+                    break
+
+                # Sobrecarga: espera (backoff + jitter) e tenta de novo.
+                if tentativa < TENTATIVAS_POR_MODELO:
+                    await asyncio.sleep(espera + random.uniform(0, 1))
+                    espera = min(espera * 2, 15)
+
+    raise RuntimeError(
+        "Todos os modelos Gemini configurados falharam. "
+        f"Último erro: {ultimo_erro}"
+    ) from ultimo_erro
 
 
 # ============================================================
@@ -766,7 +846,14 @@ async def responder(message, texto):
     """Responde à mensagem, dividindo em várias se passar de 2000."""
     partes = dividir_mensagem(texto)
 
-    await message.reply(partes[0], mention_author=False)
+    try:
+        await message.reply(partes[0], mention_author=False)
+
+    except discord.HTTPException as e:
+        # Ex.: a mensagem original foi apagada antes da resposta
+        # ("Unknown message"). Envia como mensagem normal no canal.
+        print(f"⚠️ Não foi possível responder (reply): {e}. Enviando no canal.")
+        await message.channel.send(partes[0])
 
     for parte in partes[1:]:
         await message.channel.send(parte)
@@ -901,7 +988,7 @@ async def godteste(ctx):
             # GEMINI
             # ------------------------------------------------
 
-            resposta = perguntar_gemini(
+            resposta = await perguntar_gemini(
                 ctx.author.id,
                 mensagem,
                 teve_sorte,
@@ -1007,6 +1094,7 @@ async def on_message(message):
     )
 
     historico_usuario = obter_historico(user_id)
+    registrou_bencao = False
 
     try:
 
@@ -1036,7 +1124,7 @@ async def on_message(message):
                     message.content
                 )
 
-                resposta = perguntar_gemini(
+                resposta = await perguntar_gemini(
                     user_id,
                     message.content,
                     None,
@@ -1079,7 +1167,7 @@ async def on_message(message):
                     "uma bênção hoje."
                 )
 
-                resposta = perguntar_gemini(
+                resposta = await perguntar_gemini(
                     user_id,
                     (
                         f"{message.author.display_name} "
@@ -1112,6 +1200,7 @@ async def on_message(message):
             registrar_pedido_bencao(
                 message.author.id
             )
+            registrou_bencao = True
 
             # =================================================
             # SORTEIO DA CHANCE ATUAL
@@ -1158,7 +1247,7 @@ async def on_message(message):
                 "🏰 A Torre está julgando..."
             )
 
-            resposta = perguntar_gemini(
+            resposta = await perguntar_gemini(
                 user_id,
                 message.content,
                 teve_sorte,
@@ -1197,6 +1286,12 @@ async def on_message(message):
 
         print("=" * 55)
 
+        # Se falhou antes de a Torre responder, devolve a tentativa
+        # diária de bênção para o jogador não perdê-la por erro técnico.
+        if registrou_bencao:
+            tentativas_bencao.pop(user_id, None)
+            print("🔁 Tentativa diária de bênção devolvida ao jogador.")
+
         # Remove a mensagem caso o Gemini falhe
         if (
             historico_usuario
@@ -1205,10 +1300,10 @@ async def on_message(message):
         ):
              historico_usuario.pop()
 
-        await message.reply(
+        await responder(
+            message,
             "A Torre permaneceu em silêncio por um instante.\n"
-            "Tente novamente.",
-            mention_author=False
+            "Tente novamente."
         )
 
 
